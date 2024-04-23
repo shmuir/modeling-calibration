@@ -19,21 +19,20 @@ Plotting and what it can tell you
 
 * plot through time 
   * look for differences in performance in different periods
-  * does model capture seasonlity, temporal trends
+  * does model capture seasonality, temporal trends
 
 * some things to think about that might help make it easier to "see" differences betwee
-observed time series and mdoelled time series
+observed time series and modelled time series
 
   * consider appropriate y-axis 
   * consider picking a window (subset in x-axis) 
 
 * plot x-y (observed vs model)
-  * look for bios (error) (using a 1 to 1 line are points always above or below)
+  * look for bias (error) (using a 1 to 1 line are points always above or below)
   * look for errors associated with particular magnitdues (e.g high or low values)
   
 ```{r simple}
-
-sager = read.table("../Data/sager.txt", header=T)
+sager = read.table("sager.txt", header=T)
 head(sager)
 
 # add date
@@ -131,6 +130,16 @@ compute_lowflowmetrics(m=sager$model,o=sager$obs, month=sager$month, day=sager$d
 
 # try another metric
 
+```{r}
+# turn your evaluation metric into a function
+source("compute_highflowmetrics.R")
+compute_highflowmetrics
+compute_highflowmetrics(m=sager$model,o=sager$obs, month=sager$month, day=sager$day, year=sager$year, wy=sager$wy)
+
+# use different low flow months
+compute_highflowmetrics(m=sager$model,o=sager$obs, month=sager$month, day=sager$day, year=sager$year, wy=sager$wy, high_flow_months = c(3:5))
+```
+
 
 # Create a combined metric
 
@@ -200,7 +209,7 @@ File Name
 
 # multiple results - lets say we've run the model for multiple years, each column
 # is streamflow for a different parameter set
-msage = read.table("../Data/sagerm.txt", header=T)
+msage = read.table("sagerm.txt", header=T)
 
 # lets say we know the start date from our earlier output
 msage$date = sager$date
@@ -232,7 +241,7 @@ head(res)
 # use apply to compute for all the data
 # using the updated low flow metrics routing that also computed combined metrics
 
-source("../R/compute_lowflowmetrics_all.R")
+source("compute_lowflowmetrics_all.R")
 res = msage %>% select(-date, -month, -day, -year, -wy ) %>% map_df(compute_lowflowmetrics_all, o=sager$obs, month=msage$month, day=msage$day, year=msage$year, wy=msage$wy)
 
 
@@ -261,3 +270,44 @@ ggplot(subset(msagel, run == best$run), aes(date, flow)) + geom_line()
 
 ```
 
+### high flow metrics
+```{r}
+source("compute_highflowmetrics_all.R")
+res = msage %>% select(-date, -month, -day, -year, -wy ) %>% map_df(compute_highflowmetrics_all, o=sager$obs, month=msage$month, day=msage$day, year=msage$year, wy=msage$wy)
+
+
+# interesting to look at range of metrics - could use this to decide on
+# acceptable values
+summary(res)
+
+
+# graph range of performance measures
+resl = res %>% pivot_longer(cols=everything(), names_to="metric", values_to="value")
+ggplot(resl, aes(metric, value))+geom_boxplot()+facet_wrap(~metric, scales="free")
+
+# try this
+# assign an identifier to each row, use the same identify for columns of original streamflow data
+# we can then use that to pick data
+res$run = seq(from=1,to=nrow(res))
+head(msage)
+colnames(msage)=c(res$run, "date","month","year","day","wy")
+
+# best & worst one
+best = res[which.max(res$combined),]
+worst = res[which.min(res$combined),]
+
+msagel  =  msage %>% pivot_longer(cols=!c(date, month, year, day,wy), names_to="run", values_to="flow")
+
+ggplot(subset(msagel, run == best$run), aes(date, flow)) + 
+  geom_line() +
+  labs(x = "Date",
+       y = "Flow (mm/month)",
+       title = "Monthly Aggregate Maximum Stream Flow for best model run") +
+  theme_linedraw()
+
+
+compruns = msagel %>%
+  select(msage[,68], msage[,10], flow, month, day, year, wy)
+```
+
+We chose to look at high flow (month with the highest flow rates) because high flow rates can contribute to steam erosion and damage in general. There was high variation in max flow across the months. We wanted to compute the percent error between stream flow observations and model runs. Since our maximum error is less than 50% of the maximum observed stream flow, we consider the model to be acceptable and it can be helpful in estimating influences on stream flow. 
