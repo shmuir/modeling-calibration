@@ -74,12 +74,12 @@ Lets start though with some simple metrics
 ```{r}
 
 
-source("../R/nse.R")
+source("nse.R")
 
-source("../R/relerr.R")
+source("relerr.R")
 
 
-source("../R/cper.R")
+source("cper.R")
 
 nse
 relerr
@@ -117,7 +117,7 @@ sager_aug = subset(tmp, month==8)
 cor(sager_aug$model, sager_aug$obs)
 
 # turn your evaluation metric into a function
-source("../R/compute_lowflowmetrics.R")
+source("compute_lowflowmetrics.R")
 compute_lowflowmetrics
 compute_lowflowmetrics(m=sager$model,o=sager$obs, month=sager$month, day=sager$day, year=sager$year, wy=sager$wy)
 
@@ -136,7 +136,7 @@ source("compute_highflowmetrics.R")
 compute_highflowmetrics
 compute_highflowmetrics(m=sager$model,o=sager$obs, month=sager$month, day=sager$day, year=sager$year, wy=sager$wy)
 
-# use different low flow months
+# use different high flow months
 compute_highflowmetrics(m=sager$model,o=sager$obs, month=sager$month, day=sager$day, year=sager$year, wy=sager$wy, high_flow_months = c(3:5))
 ```
 
@@ -304,10 +304,6 @@ ggplot(subset(msagel, run == best$run), aes(date, flow)) +
        y = "Flow (mm/month)",
        title = "Monthly Aggregate Maximum Stream Flow for best model run") +
   theme_linedraw()
-
-
-compruns = msagel %>%
-  select(msage[,68], msage[,10], flow, month, day, year, wy)
 ```
 
 We chose to look at high flow (month with the highest flow rates) because high flow rates can contribute to steam erosion and damage in general. There was high variation in max flow across the months. We wanted to compute the percent error between stream flow observations and model runs. Since our maximum error is less than 50% of the maximum observed stream flow, we consider the model to be acceptable and it can be helpful in estimating influences on stream flow. 
