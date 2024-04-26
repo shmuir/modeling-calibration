@@ -1,0 +1,224 @@
+---
+title: "High stream flow performance metrics"
+author: "Sam Muir & Melissa Widas"
+date: "2024-04-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(sensitivity)
+library(tidyverse)
+library(purrr)
+library(ggpubr)
+library(patchwork)
+```
+
+```{r}
+sager = read.table("sager.txt", header=T)
+# add date
+sager = sager %>% mutate(date = paste(day,month,year, sep="/"))
+sager$date = as.Date(sager$date,"%d/%m/%Y")
+
+source("nse.R")
+source("relerr.R")
+source("cper.R")
+```
+
+# try another metric
+```{r}
+# turn your evaluation metric into a function
+source("compute_highflowmetrics.R")
+compute_highflowmetrics
+compute_highflowmetrics(m=sager$model,o=sager$obs, month=sager$month, day=sager$day, year=sager$year, wy=sager$wy)
+
+# use different high flow months
+compute_highflowmetrics(m=sager$model,o=sager$obs, month=sager$month, day=sager$day, year=sager$year, wy=sager$wy, high_flow_months = c(3:5))
+```
+
+# Combined Metric
+
+```{r}
+perf_high = compute_highflowmetrics(m=sager$model,o=sager$obs, month=sager$month, day=sager$day, year=sager$year, wy=sager$wy, high_flow_months = c(3:5))
+
+perf_high = as.data.frame((perf_high))
+# remember you want error to be low but correlation to be high 
+# so we need to transform in some way
+
+# normalize by max error = if error is greater than this we don't care
+tmp = sager %>% subset(month %in% c(3:5)) 
+errmax_high = mean(tmp$obs)*0.5
+
+perf_high = perf_high %>% mutate(annual_max_err_trans = max(0,(1-abs(annual_max_err/errmax_high) )))
+      
+# for monthly we can do a simpler thing to find maximum allowable errror   
+tmp_high = sager %>% subset(month %in% c(3:5)) %>% group_by(wy, month) %>% summarize(obs=sum(obs))
+
+errmax_high = mean(tmp_high$obs)*0.5
+ 
+perf_high = perf_high %>% mutate(high_month_err_trans = max(0,(1-abs(high_month_err/errmax_high) )))
+
+# now we have 4 measures that we can combine together
+
+perf_high = perf_high %>% mutate(combined = (annual_max_cor + annual_max_err_trans + high_month_err_trans + high_month_cor)/4)
+perf_high
+# or weight differently 
+
+perf_high = perf_high %>% mutate(combined2 = 0.1*annual_max_cor + 0.1*annual_max_err_trans + 0.4*high_month_err_trans+ 0.4*high_month_cor)
+
+perf_high
+```
+
+# Split-sample Calibration
+```{r}
+source("compute_highflowmetrics_all.R")
+res = msage %>% select(-date, -month, -day, -year, -wy ) %>% map_df(compute_highflowmetrics_all, o=sager$obs, month=msage$month, day=msage$day, year=msage$year, wy=msage$wy)
+
+
+# interesting to look at range of metrics - could use this to decide on
+# acceptable values
+summary(res)
+
+
+# graph range of performance measures
+resl = res %>% pivot_longer(cols=everything(), names_to="metric", values_to="value")
+ggplot(resl, aes(metric, value))+geom_boxplot()+facet_wrap(~metric, scales="free")
+
+# try this
+# assign an identifier to each row, use the same identify for columns of original streamflow data
+# we can then use that to pick data
+res$run = seq(from=1,to=nrow(res))
+head(msage)
+colnames(msage)=c(res$run, "date","month","year","day","wy")
+
+# best & worst one
+best = res[which.max(res$combined),]
+worst = res[which.min(res$combined),]
+
+msagel  =  msage %>% pivot_longer(cols=!c(date, month, year, day,wy), names_to="run", values_to="flow")
+
+ggplot(subset(msagel, run == best$run), aes(date, flow)) + 
+  geom_line() +
+  labs(x = "Date",
+       y = "Flow (mm/month)",
+       title = "Monthly Aggregate Maximum Stream Flow for best model run") +
+  theme_linedraw()
+```
+
+```{r}
+msage = read.table("sagerm.txt", header=T)
+# keep track of number of simulations (e.g results for each parameter set)
+# use as a column names
+nsim = ncol(msage)
+snames = sprintf("S%d",seq(from=1, to=nsim))
+colnames(msage)=snames
+# lets say we know the start date from our earlier output
+msage$date = sager$date
+msage$month = sager$month
+msage$year = sager$year
+msage$day = sager$day
+msage$wy = sager$wy
+# lets add observed
+msage = left_join(msage, sager[,c("obs","date")], by=c("date"))
+head(msage)
+
+# subset for split sample calibration
+short_msage = subset(msage, wy < 1975)
+# compute performance measures for output from all parameters
+res = short_msage %>% select(!c("date","month","year","day","wy","obs")) %>%
+map_dbl(nse, short_msage$obs) 
+# purrr function here! map_dbl will apply the function nse() to each column in our data frame against the observed and returns a vector
+head(res)
+# another example using our low flow statistics
+# use apply to compute for all the data
+source("compute_highflowmetrics_all.R")
+res = short_msage %>% select(-date, -month, -day, -year, -wy, -obs ) %>%
+map_df(compute_highflowmetrics_all, o=short_msage$obs, month=short_msage$month,
+day=short_msage$day, year=short_msage$year, wy=short_msage$wy)
+
+summary(res)
+
+# we can add a row that links with simulation number
+res$sim = snames
+# graph range of performance measures
+resl = res %>% pivot_longer(-sim, names_to="metric", values_to="value")
+ggplot(resl, aes(metric, value))+geom_boxplot()+facet_wrap(~metric, scales="free")
+```
+
+### Best & Worst
+```{r}
+# select the best one based on the combined metric
+best = res[which.max(res$combined),]
+# running the model forward
+# so we can look at the full time series
+# lets start with streamflow estimates from best performing parameter set
+ggplot(msage, aes(date, msage[,best$sim])) + geom_line()+geom_line(aes(date, obs),
+col="red")
+# for comparison lets consider how worst and best parameters perform for subsequent simulations
+# focusing specifically on April streamflow
+worst = res[which.min(res$combined),]
+compruns = msage %>% select(best$sim, worst$sim, date, obs, month, day, year, wy)
+```
+
+### Plotting
+```{r}
+## post calibration
+compruns_post = subset(compruns, wy > 1975)
+compruns_mwy_post = compruns_post %>% select(-c(day,date, year)) %>% group_by(month, wy) %>%
+summarize(across(everything(), mean))
+compruns_mwy_post = compruns_mwy_post %>% pivot_longer(cols=!c(month,wy), names_to="sim",
+values_to="flow")
+post <- compruns_mwy_post %>% subset(month==4) %>% ggplot(aes(sim,flow ))+geom_boxplot() +labs(title = "Post-Calibration")
+
+## pre calibration
+compruns_pre = subset(compruns, wy < 1975)
+compruns_mwy_pre = compruns_pre %>% select(-c(day,date, year)) %>% group_by(month, wy) %>%
+summarize(across(everything(), mean))
+compruns_mwy_pre = compruns_mwy_pre %>% pivot_longer(cols=!c(month,wy), names_to="sim",
+values_to="flow")
+pre <- compruns_mwy_pre %>% subset(month==4) %>% ggplot(aes(sim,flow ))+geom_boxplot() + labs(title = "Pre-Calibration")
+
+pre + post
+```
+
+We chose to look at high flow (month with the highest flow rates) because high flow rates can contribute to steam erosion and damage in general. There was high variation in max flow across the months. We wanted to compute the percent error between stream flow observations and model runs. Since our maximum error is less than 50% (and is actually less than 0), we consider the model to be not acceptable and it cannot be helpful in estimating influences on overall stream flow. 
+
+
+# Acceptable Outcomes
+```{r}
+threshold=0.3
+res_acc=subset(res,combined > threshold)
+head(res_acc)
+
+# create a weight for each parameter set based on its relative accuracy - we do this so all weights sum to 1
+sum_acc=sum(res_acc$combined)
+res_acc$wt_acc=res_acc$combined/sum_acc
+head(res_acc[,c("sim","combined","wt_acc")])
+
+# generate a streamflow as weighted average of all acceptable parameter sets
+# recall that msagel is the flow data for all runs so we
+# can link with weights from res_acc by run id
+msagel = msage %>% pivot_longer(cols=!c(date, month, year, day,wy, obs), names_to="sim", values_to="flow")
+# subset only acceptable runs
+msagel_acc = subset(msagel, sim %in% res_acc$sim)
+
+# join with weights from res_acc, left_join will repeat weights for each day in streamflow trajectory
+msagel_acc = left_join(msagel_acc, res_acc, by="sim")
+# finally multiply flow by weight
+msagel_acc = msagel_acc %>% mutate(flow_wt = flow*wt_acc)
+head(msagel_acc[,c('date',"obs","sim","flow","combined","wt_acc","flow_wt")])
+
+# now we can average streamflow for each day from all the runs # using the weights
+aver_flow = msagel_acc %>% group_by(date) %>% dplyr::summarize(meanstr = sum(flow_wt))
+# add some date information or simply add to simQ
+ggplot(aver_flow, aes(x=date, y=meanstr))+geom_line(col="red")+labs(y="Streamflow mm/day")
+
+# add some of the other date info and plot a subset
+aver_flow$wy = msage$wy
+wycheck=1985
+ggplot(subset(aver_flow, wy == wycheck), aes(x=date, y=meanstr, col="model_wt"))+
+geom_line()+labs(y="Streamflow mm/day")+
+geom_line(data=subset(msage, wy==wycheck), aes(date, obs, col="obs"))
+```
+

@@ -21,7 +21,7 @@ Plotting and what it can tell you
   * look for differences in performance in different periods
   * does model capture seasonality, temporal trends
 
-* some things to think about that might help make it easier to "see" differences betwee
+* some things to think about that might help make it easier to "see" differences between
 observed time series and modelled time series
 
   * consider appropriate y-axis 
@@ -185,6 +185,40 @@ perf
 
 ```
 
+## High flow
+```{r}
+perf_high = compute_highflowmetrics(m=sager$model,o=sager$obs, month=sager$month, day=sager$day, year=sager$year, wy=sager$wy, high_flow_months = c(3:5))
+
+perf_high = as.data.frame((perf_high))
+# remember you want error to be low but correlation to be high 
+# so we need to transform in some way
+
+# normalize by max error = if error is greater than this we don't care
+# many ideas -  maybe 50% of mean daily summer observed low flow
+tmp = sager %>% subset(month %in% c(3:5)) 
+errmax_high = mean(tmp$obs)*0.5
+
+perf_high = perf_high %>% mutate(annual_max_err_trans = max(0,(1-abs(annual_max_err/errmax_high) )))
+      
+# for monthly we can do a simpler thing to find maximum allowable errror   
+tmp_high = sager %>% subset(month %in% c(3:5)) %>% group_by(wy, month) %>% summarize(obs=sum(obs))
+
+errmax_high = mean(tmp_high$obs)*0.5
+ 
+perf_high = perf_high %>% mutate(high_month_err_trans = max(0,(1-abs(high_month_err/errmax_high) )))
+
+# now we have 4 measures that we can combine together
+
+perf_high = perf_high %>% mutate(combined = (annual_max_cor + annual_max_err_trans + high_month_err_trans + high_month_cor)/4)
+perf_high
+# or weight differently 
+
+perf_high = perf_high %>% mutate(combined2 = 0.1*annual_max_cor + 0.1*annual_max_err_trans + 0.4*high_month_err_trans+ 0.4*high_month_cor)
+
+perf_high
+
+# easier to put all this in a function
+```
 
 # Calibration
 
@@ -205,7 +239,7 @@ File Name
 
 
 
-```{r multipel}
+```{r multiple}
 
 # multiple results - lets say we've run the model for multiple years, each column
 # is streamflow for a different parameter set
@@ -306,4 +340,79 @@ ggplot(subset(msagel, run == best$run), aes(date, flow)) +
   theme_linedraw()
 ```
 
-We chose to look at high flow (month with the highest flow rates) because high flow rates can contribute to steam erosion and damage in general. There was high variation in max flow across the months. We wanted to compute the percent error between stream flow observations and model runs. Since our maximum error is less than 50% of the maximum observed stream flow, we consider the model to be acceptable and it can be helpful in estimating influences on stream flow. 
+```{r}
+msage = read.table("sagerm.txt", header=T)
+# keep track of number of simulations (e.g results for each parameter set)
+# use as a column names
+nsim = ncol(msage)
+snames = sprintf("S%d",seq(from=1, to=nsim))
+colnames(msage)=snames
+# lets say we know the start date from our earlier output
+msage$date = sager$date
+msage$month = sager$month
+msage$year = sager$year
+msage$day = sager$day
+msage$wy = sager$wy
+# lets add observed
+msage = left_join(msage, sager[,c("obs","date")], by=c("date"))
+head(msage)
+
+source("nse.R")
+source("relerr.R")
+# subset for split sample calibration
+short_msage = subset(msage, wy < 1975)
+# compute performance measures for output from all parameters
+res = short_msage %>% select(!c("date","month","year","day","wy","obs")) %>%
+map_dbl(nse, short_msage$obs) 
+# purrr function here! map_dbl will apply the function nse() to each column in our data frame against the observed and returns a vector
+head(res)
+# another example using our low flow statistics
+# use apply to compute for all the data
+source("compute_highflowmetrics_all.R")
+res = short_msage %>% select(-date, -month, -day, -year, -wy, -obs ) %>%
+map_df(compute_highflowmetrics_all, o=short_msage$obs, month=short_msage$month,
+day=short_msage$day, year=short_msage$year, wy=short_msage$wy)
+
+summary(res)
+
+# we can add a row that links with simulation number
+res$sim = snames
+# graph range of performance measures
+resl = res %>% pivot_longer(-sim, names_to="metric", values_to="value")
+ggplot(resl, aes(metric, value))+geom_boxplot()+facet_wrap(~metric, scales="free")
+
+
+# select the best one based on the combined metric
+best = res[which.max(res$combined),]
+# running the model forward
+# so we can look at the full time series
+# lets start with streamflow estimates from best performing parameter set
+ggplot(msage, aes(date, msage[,best$sim])) + geom_line()+geom_line(aes(date, obs),
+col="red")
+
+
+# for comparison lets consider how worst and best parameters perform for subsequent simulations
+# focusing specifically on April streamflow
+worst = res[which.min(res$combined),]
+compruns = msage %>% select(best$sim, worst$sim, date, obs, month, day, year, wy)
+## post calibration
+compruns_post = subset(compruns, wy > 1975)
+compruns_mwy_post = compruns_post %>% select(-c(day,date, year)) %>% group_by(month, wy) %>%
+summarize(across(everything(), mean))
+compruns_mwy_post = compruns_mwy_post %>% pivot_longer(cols=!c(month,wy), names_to="sim",
+values_to="flow")
+post <- compruns_mwy_post %>% subset(month==4) %>% ggplot(aes(sim,flow ))+geom_boxplot() +labs(title = "Post-Calibration")
+
+## pre calibration
+compruns_pre = subset(compruns, wy < 1975)
+compruns_mwy_pre = compruns_pre %>% select(-c(day,date, year)) %>% group_by(month, wy) %>%
+summarize(across(everything(), mean))
+compruns_mwy_pre = compruns_mwy_pre %>% pivot_longer(cols=!c(month,wy), names_to="sim",
+values_to="flow")
+pre <- compruns_mwy_pre %>% subset(month==4) %>% ggplot(aes(sim,flow ))+geom_boxplot() + labs(title = "Pre-Calibration")
+
+pre + post
+```
+
+
+We chose to look at high flow (month with the highest flow rates) because high flow rates can contribute to steam erosion and damage in general. There was high variation in max flow across the months. We wanted to compute the percent error between stream flow observations and model runs. Since our maximum error is less than 50% (and is actually less than 0), we consider the model to be not acceptable and it cannot be helpful in estimating influences on overall stream flow. 

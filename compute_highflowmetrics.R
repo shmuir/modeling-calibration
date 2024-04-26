@@ -7,12 +7,12 @@
 #' @param  day day
 #' @param  year year
 #' @param high_flow_months which to use default (March 3)
-#' @return annual_min_err, annual_min_corr, high_month_cor, high_month_err
+#' @return annual_max_err, annual_max_corr, high_month_cor, high_month_err
 
 compute_highflowmetrics = function(m,o, month, day, year,wy, high_flow_months=3) {
 
   flow = cbind.data.frame(m,o, month, day, year,wy)
-  # first lets get minimum yearly values
+  # first lets get max yearly values
 
   tmp = flow %>% group_by(wy) %>% summarize(maxo=max(o), maxm=max(m))
 
@@ -27,6 +27,6 @@ compute_highflowmetrics = function(m,o, month, day, year,wy, high_flow_months=3)
   high_month_err = mean(high$model-high$obs)
   high_month_cor=cor(high$model, high$obs)
 
-  return(list(annual_min_err=annual_max_err, annual_min_cor=annual_max_cor, high_month_err=high_month_err,
+  return(list(annual_max_err=annual_max_err, annual_max_cor=annual_max_cor, high_month_err=high_month_err,
               high_month_cor=high_month_cor))
 }
