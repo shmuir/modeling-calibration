@@ -6,10 +6,10 @@
 #' @param  month month
 #' @param  day day
 #' @param  year year
-#' @param high_flow_months which to use default March 3)
-#' @param wts (vector of 4 for annual_min_err, annual_min_corr, low_month_cor, low_month_err)
-#' @param max_err_annual_min
-#' @param max_err_low_month
+#' @param high_flow_months default March 3)
+#' @param wts (vector of 4 for annual_max_err, annual_max_corr, high_month_cor, high_month_err)
+#' @param max_err_annual_max
+#' @param max_err_high_month
 #' @return annual_min_err, annual_min_corr, low_month_cor, low_month_err
 
 
