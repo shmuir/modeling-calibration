@@ -166,6 +166,7 @@ perf = perf %>% mutate(annual_min_err_trans = max(0,(1-abs(annual_min_err/errmax
 # for monthly we can do a simpler thing to find maximum allowable errror   
 tmp = sager %>% subset(month %in% c(7:9)) %>% group_by(wy, month) %>% summarize(obs=sum(obs))
 
+
 errmax = mean(tmp$obs)*0.5
  
 perf = perf %>% mutate(low_month_err_trans = max(0,(1-abs(low_month_err/errmax) )))
@@ -181,8 +182,6 @@ perf = perf %>% mutate(combined2 = 0.1*annual_min_cor + 0.1*annual_min_err_trans
 perf
 
 # easier to put all this in a function
-
-
 ```
 
 
