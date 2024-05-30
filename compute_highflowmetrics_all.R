@@ -14,41 +14,42 @@
 
 
 compute_highflowmetrics_all = function(m,o, month, day, year,wy, high_flow_months=3,
-                                      max_err_annual_max=NULL, max_err_high_month=NULL, wts=c(0.25,0.25,0.25,0.25)) {
+                                      max_err_annual_max=NULL, max_err_high_month=NULL, wts=c(0.4,0.25,0.25,0.4)) {
 
-
+  # get flow df
   flow = cbind.data.frame(m,o, month, day, year,wy)
-  # first lets get minimum yearly values
-
+ 
+   # get minimum yearly values
   tmp = flow %>% group_by(wy) %>% dplyr::summarize(maxo=max(o), maxm=max(m))
-
+  
   annual_max_err = mean(tmp$maxm-tmp$maxo)
 
   annual_max_cor = cor(tmp$maxm, tmp$maxo)
 
   if (is.null(max_err_annual_max))
-  { max_err_annual_max = 0.5*mean(tmp$maxo)}
+  { max_err_annual_max = 0.4*mean(tmp$maxo)}
 
   # now lets get monthly values
   tmp = flow %>% group_by(month, year) %>% dplyr::summarize(model=sum(m), obs=sum(o))
-  # now extract august
+  # now extract March
   high = subset(tmp, month %in% high_flow_months)
   high_month_err = mean(high$model-high$obs)
   high_month_cor=cor(high$model, high$obs)
 
-  # if user doesn't specify maximum errors use 50% of mean observed values
+  # if user doesn't specify maximum errors use 40% of mean observed values
   if (is.null(max_err_high_month))
-  { max_err_high_month = 0.5*mean(high$obs)}
+  { max_err_high_month = 0.4*mean(high$obs)}
 
   annual_max_err_trans = max(0,(1-abs(annual_max_err/max_err_annual_max) ))
   high_month_err_trans = max(0,(1-abs(high_month_err/max_err_high_month) ))
 
-    # apply weight (normalize in case they don't sum to 1)
+    # apply weight and normalize
   wts = wts/sum(wts)
-
+  # combine all values
   combined = wts[1]*annual_max_err_trans + wts[2]*annual_max_cor+
               wts[3]*high_month_cor + wts[4]*high_month_err_trans
-
+  
+  #return values as a list
   return(list(annual_max_err=annual_max_err, annual_max_cor=annual_max_cor, high_month_err=high_month_err,
               high_month_cor=high_month_cor, combined=combined))
 }
