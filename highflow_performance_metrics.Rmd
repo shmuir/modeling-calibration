@@ -1,13 +1,15 @@
 ---
 title: "High stream flow performance metrics"
 author: "Sam Muir & Melissa Widas"
-date: "2024-04-26"
+date: "2024-06-02"
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
 
+```{r}
 library(sensitivity)
 library(tidyverse)
 library(purrr)
@@ -17,6 +19,7 @@ library(ggtext)
 ```
 
 ```{r}
+# read in data
 sager = read.table("sager.txt", header=T)
 msage = read.table("sagerm.txt", header=T)
 # add date
@@ -28,7 +31,7 @@ source("relerr.R")
 source("cper.R")
 ```
 
-# try another metric
+# High-flow Metrics
 ```{r}
 # turn your evaluation metric into a function
 source("compute_highflowmetrics.R")
@@ -37,20 +40,19 @@ compute_highflowmetrics
 # run highflow metrics
 compute_highflowmetrics(m=sager$model,o=sager$obs, month=sager$month, day=sager$day, year=sager$year, wy=sager$wy)
 
-# run highflow metrics across march april and may (high flow months)
+# run highflow metrics across march, april, and may (high flow months)
 perf_high = compute_highflowmetrics(m=sager$model,o=sager$obs, month=sager$month, day=sager$day, year=sager$year, wy=sager$wy, high_flow_months = c(3:5))
 perf_high
 ```
 
 # Combined Metric
-
 ```{r}
 # convert highflow metrics to dataframe
 perf_high = as.data.frame(perf_high)
 
 # normalize by max error of 0.4
 tmp = sager %>% 
-  subset(month %in% c(3:5)) 
+  subset(month %in% c(3:5)) # subset to our high flow months
 errmax_high = mean(tmp$obs)*0.4
 
 # add col annual_max_err_trans
@@ -59,11 +61,11 @@ perf_high = perf_high %>%
       
 # subset to highflow months and get the sum for each month by wy
 tmp_high = sager %>% 
-  subset(month %in% c(3:5)) %>% 
+  subset(month %in% c(3:5)) %>% # subset to our high flow months
   group_by(wy, month) %>% 
   summarize(obs=sum(obs))
 
-# normalize by max error of 0.4
+# normalize by 0.4
 errmax_high = mean(tmp_high$obs)*0.4
 
 # add col annual_max_err_trans 
@@ -125,7 +127,7 @@ ggplot(resl, aes(metric, value)) +
 res$run = seq(from=1,to=nrow(res))
 res = res %>% 
   filter(run != 102)
-head(msage)
+# head(msage)
 colnames(msage)=c(res$run, "date","month","year","day","wy", "obs")
 
 # extract best & worst one
@@ -176,7 +178,7 @@ ggplot(resl, aes(metric, value)) +
 ```
 
 ### Find the Best & Worst Runs
-```{r}
+```{r, fig.width=12}
 # read in data
 msage = read.table("sagerm.txt", header=T)
 
@@ -247,4 +249,4 @@ pre <- compruns_mwy_pre %>%
 pre + post
 ```
 
-We chose to look at high flow (month with the highest flow rates) because high flow rates can contribute to steam erosion and damage in general. There was high variation in max flow across the months. We wanted to compute the percent error between stream flow observations and model runs.  
+We chose to look at high flow (month with the highest flow rates) because high flow rates can contribute to steam erosion and damage in general. High flow can alter ecological restoration decisions and impact water use regulations. There was high variation in max flow throughout the year, so we determined that March, April, and May generally had the highest flow rates.
